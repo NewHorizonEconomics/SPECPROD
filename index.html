@@ -260,7 +260,7 @@ function fmtRank(x){ return Number.isFinite(x) ? `${x} of 350` : '—'; }
 function safe(v){ return String(v ?? '').replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])); }
 function modeLabel(m=mode){
   if (m === 'prod') return 'Productivity';
-  if (m === 'bivar') return 'Cross-ref';
+  if (m === 'bivar') return 'Interaction';
   return 'KSI';
 }
 function modeTitle(m=mode){
