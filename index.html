@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>New Horizon Economics | Local Economic Specialisation & Productivity</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js" defer></script>
+
+  <style>
+    :root {
+      --bg:#0b0f19;
+      --panel:#212F47;
+      --panel2:#0e1424;
+      --text:#e8ecf3;
+      --muted:#c3ccda;
+      --accent:#4f8cff;
+      --border:#2f3e5b;
+      --gold:#ffae00;
+      --nodata:#3a4258;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    #app {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      grid-template-rows: auto 1fr;
+      height: 100%;
+    }
+
+    header {
+      grid-column: 1 / -1;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand img { width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255,255,255,.08); object-fit: cover; }
+    header h1 { margin: 0; font-weight: 800; font-size: 21px; letter-spacing: .45px; text-transform: uppercase; color: var(--text); line-height: 1.15; }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+
+    aside {
+      border-right: 1px solid var(--border);
+      background: var(--panel);
+      padding: 14px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    main { position: relative; min-width: 0; }
+    #map { height: 100%; width: 100%; min-height: 420px; }
+
+    .group { margin-bottom: 15px; }
+    .group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+    input[type="range"], input[type="number"], button, select {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+
+    button { cursor: pointer; font-weight: 650; }
+    button:hover { border-color: #58729d; }
+    .row-inline { display:flex; gap:8px; align-items:center; }
+
+    .kpis { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px; }
+    .kpi { background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; }
+    .kpi .l { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .kpi .v { font-size: 17px; font-weight: 750; color: var(--text); }
+
+    .method, .profile {
+      background: rgba(14,20,36,.72);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 11px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .profile h2 { margin: 0 0 8px 0; font-size: 15px; color: var(--text); line-height: 1.2; }
+    .profile .code { color: var(--muted); font-weight: 500; }
+    .profile-row { display:flex; justify-content:space-between; gap:10px; border-top:1px solid rgba(255,255,255,.08); padding:7px 0; }
+    .profile-row:first-of-type { border-top:0; }
+    .profile-row span:first-child { color: var(--muted); }
+    .profile-row span:last-child { color: var(--text); font-weight: 650; text-align:right; }
+    .peer { padding:4px 0; color:var(--text); }
+    .peer small { color:var(--muted); }
+
+    .legend {
+      position:absolute;
+      bottom:16px;
+      right:16px;
+      background:rgba(20,26,42,.96);
+      border:1px solid var(--border);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:12px;
+      font-size:12px;
+      line-height:1.2;
+      box-shadow:0 10px 24px rgba(0,0,0,.25);
+      z-index:1000;
+      pointer-events:none;
+      max-width: 320px;
+    }
+    .legend .row{display:flex;align-items:center;gap:8px;margin:4px 0}
+    .swatch{width:16px;height:12px;border-radius:2px;border:1px solid rgba(255,255,255,.1); flex:0 0 auto;}
+    .legend-title { margin-bottom:6px; font-weight:750; text-transform:uppercase; line-height:1.3; }
+    .legend-sub { font-weight:400; color:var(--muted); text-transform:none; }
+
+    .bivar-wrap { display:grid; grid-template-columns: 72px repeat(3, 44px); gap:4px; align-items:center; }
+    .bivar-cell { height:28px; border-radius:4px; border:1px solid rgba(255,255,255,.16); }
+    .bivar-lab { color:var(--muted); font-size:11px; text-align:center; }
+    .bivar-y { color:var(--muted); font-size:11px; text-align:right; padding-right:4px; }
+
+    .tooltip {
+      background:rgba(20,26,42,.97);
+      border:1px solid var(--border);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:10px;
+      font-size:12px;
+      box-shadow:0 10px 24px rgba(0,0,0,.25);
+      line-height: 1.35;
+    }
+    .note{font-size:12px;color:var(--muted)}
+    .strong { color:var(--text); font-weight:700; }
+
+    @media (max-width: 840px) {
+      #app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid var(--border); max-height: 46vh; }
+      header h1 { font-size: 16px; }
+      .brand img { width:34px; height:34px; }
+      .legend { left:10px; right:10px; bottom:10px; max-width:none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="brand">
+        <img src="/data/logo.png" alt="New Horizon Economics logo" onerror="this.style.display='none'" />
+        <div>
+          <h1>New Horizon Economics | Local Economic Specialisation & Productivity</h1>
+          <div class="sub">LAD 2023 geography · Krugman Specialisation Index and GVA/FTE productivity index</div>
+        </div>
+      </div>
+    </header>
+
+    <aside>
+      <div class="group kpis">
+        <div class="kpi"><div class="l">Year</div><div class="v" id="kpi-year">—</div></div>
+        <div class="kpi"><div class="l">Mode</div><div class="v" id="kpi-mode">—</div></div>
+      </div>
+
+      <div class="group">
+        <label for="modeSelect">Analysis mode</label>
+        <select id="modeSelect">
+          <option value="ksi" selected>Krugman Specialisation Index</option>
+          <option value="prod">GVA/FTE productivity index</option>
+          <option value="bivar">KSI × productivity</option>
+        </select>
+      </div>
+
+      <div class="group">
+        <label for="yearRange">Year</label>
+        <input id="yearRange" type="range" min="2015" max="2024" step="1" value="2023" />
+        <input id="yearInput" type="number" min="2015" max="2024" step="1" value="2023" style="margin-top:6px;" />
+      </div>
+
+      <div class="group row-inline">
+        <button id="playBtn" style="flex:1;">▶ Play year</button>
+        <button id="fitBtn" style="flex:1;">Reset map</button>
+      </div>
+
+      <div class="group">
+        <button id="legendToggle">Hide legend</button>
+      </div>
+
+      <div class="group profile" id="profilePanel">
+        <h2>Select a local authority</h2>
+        <div class="note">Click an area on the map to show its values, ranks and nearest peers.</div>
+      </div>
+
+      <div class="group method">
+        <strong style="color:var(--text);">Method note</strong><br>
+        KSI is shown divided by two; higher values indicate greater industrial specialisation relative to GB. Productivity is indexed to GB = 100. Single-variable maps use fixed breaks across all available years. The cross-referenced view uses fixed 3×3 groups for KSI and productivity and is available to 2023.
+      </div>
+    </aside>
+
+    <main>
+      <div id="map"></div>
+      <div id="legend" class="legend"></div>
+    </main>
+  </div>
+
+<script defer>
+// ================== FILES ==================
+// Put these files in the /data/ folder alongside your logo.png, matching the uploaded filenames.
+const KSI_URL  = '/data/KSI DATA.csv';
+const PROD_URL = '/data/PRODUCTIVITY.csv';
+const GEO_URL  = '/data/lad_2023.geojson';
+
+// GeoJSON property names
+const GEO_CODE_PROP = 'LAD23CD';
+const GEO_NAME_PROP = 'LAD23NM';
+
+// ================== PALETTES ==================
+const SINGLE_PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
+const NO_DATA_FILL = '#3a4258';
+
+// 3x3 bivariate palette: rows = KSI low/mid/high, columns = productivity low/mid/high.
+// Cool analytical palette, deliberately distinct from the amber single-variable maps.
+const BIVAR = [
+  ['#d9e5ef', '#9ec8cf', '#5fb7bd'],
+  ['#9bacc7', '#6f8eae', '#337f9e'],
+  ['#6d6f9f', '#4b5f91', '#163b75']
+];
+
+// ================== STATE ==================
+let map, layer, geoJson;
+let records = new Map();       // code -> {name, years: {2015:{ksi,prod}}}
+let rowsByYear = new Map();    // year -> array of {code,name,ksi,prod,ksiRank,prodRank,bivarClass...}
+let breaks = { ksi: [], prod: [], ksiTerciles: [], prodTerciles: [] };
+let stats = { ksiMean: 0, ksiSd: 1, prodMean: 0, prodSd: 1 };
+let year = 2023;
+let mode = 'ksi';
+let yearBounds = { min: 2015, max: 2024 };
+let legendVisible = JSON.parse(localStorage.getItem('legendVisible') ?? 'true');
+let selectedCode = null;
+let timer = null;
+
+const norm = x => String(x ?? '').trim().toUpperCase();
+function num(x){
+  if (x == null || x === '') return NaN;
+  const v = +String(x).replace(/[\s,]+/g,'').replace(/[–—]/g,'-');
+  return Number.isFinite(v) ? v : NaN;
+}
+function fmt(x, dp=3){ return Number.isFinite(x) ? x.toFixed(dp) : '—'; }
+function fmtRank(x){ return Number.isFinite(x) ? `${x} of 350` : '—'; }
+function safe(v){ return String(v ?? '').replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])); }
+function modeLabel(m=mode){
+  if (m === 'prod') return 'Productivity';
+  if (m === 'bivar') return 'Cross-ref';
+  return 'KSI';
+}
+function modeTitle(m=mode){
+  if (m === 'prod') return 'GVA/FTE productivity index';
+  if (m === 'bivar') return 'KSI × productivity';
+  return 'Krugman Specialisation Index';
+}
+
+function quantiles(values, k){
+  const v = values.filter(Number.isFinite).sort((a,b)=>a-b);
+  if (!v.length) return [];
+  const qs = [];
+  for (let i=0; i<=k; i++) {
+    const pos = (i/k) * (v.length - 1);
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    const val = lo === hi ? v[lo] : v[lo] + (v[hi] - v[lo]) * (pos - lo);
+    qs.push(val);
+  }
+  qs[0] = Math.min(...v);
+  qs[qs.length-1] = Math.max(...v);
+  return qs;
+}
+function classify(val, brks){
+  if (!Number.isFinite(val) || !brks.length) return -1;
+  for (let i=0; i<brks.length-1; i++) {
+    if (val <= brks[i+1] || i === brks.length-2) return i;
+  }
+  return brks.length-2;
+}
+function colorForSingle(val, brks){
+  const c = classify(val, brks);
+  return c < 0 ? NO_DATA_FILL : SINGLE_PALETTE[Math.min(c, SINGLE_PALETTE.length-1)];
+}
+function bivarClass(ksi, prod){
+  const kr = classify(ksi, breaks.ksiTerciles);
+  const pr = classify(prod, breaks.prodTerciles);
+  if (kr < 0 || pr < 0) return null;
+  return { ksiGroup: kr, prodGroup: pr, color: BIVAR[kr][pr] };
+}
+function bivarLabel(cls){
+  if (!cls) return 'No data';
+  const k = ['More diversified','Moderately specialised','More specialised'][cls.ksiGroup];
+  const p = ['lower productivity','mid productivity','higher productivity'][cls.prodGroup];
+  return `${k} / ${p}`;
+}
+
+// ================== LOAD DATA ==================
+window.addEventListener('DOMContentLoaded', async () => {
+  map = L.map('map',{preferCanvas:true,zoomSnap:0.25,zoomDelta:0.5}).setView([54.9,-3.5],6);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap, &copy; CARTO'
+  }).addTo(map);
+
+  bindControls();
+
+  try {
+    await loadAll();
+    computeDerived();
+    drawLayer();
+    fitUK();
+    render();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to load the app data. Check file names and the browser console for details.');
+  }
+});
+
+function bindControls(){
+  const yrR = document.getElementById('yearRange');
+  const yrI = document.getElementById('yearInput');
+  const modeSel = document.getElementById('modeSelect');
+
+  yrR.addEventListener('input', e => { setYear(+e.target.value); });
+  yrI.addEventListener('input', e => { setYear(+e.target.value); });
+  modeSel.addEventListener('change', e => {
+    mode = e.target.value;
+    if ((mode === 'prod' || mode === 'bivar') && year > 2023) year = 2023;
+    setYearBoundsForMode();
+    render();
+  });
+  document.getElementById('fitBtn').addEventListener('click', fitUK);
+  document.getElementById('playBtn').addEventListener('click', togglePlay);
+  document.getElementById('legendToggle').addEventListener('click', () => {
+    legendVisible = !legendVisible;
+    applyLegendVisibility();
+  });
+}
+
+function setYear(y){
+  const maxY = (mode === 'ksi') ? 2024 : 2023;
+  year = Math.max(2015, Math.min(maxY, y));
+  render();
+}
+function setYearBoundsForMode(){
+  const maxY = (mode === 'ksi') ? 2024 : 2023;
+  const yrR = document.getElementById('yearRange');
+  const yrI = document.getElementById('yearInput');
+  yrR.min = 2015; yrR.max = maxY; yrR.value = year;
+  yrI.min = 2015; yrI.max = maxY; yrI.value = year;
+}
+
+async function loadCsv(url){
+  const res = await fetch(url, {cache:'no-store'});
+  if (!res.ok) throw new Error(`CSV fetch failed: ${url}`);
+  const text = await res.text();
+  const parsed = Papa.parse(text, {header:true, dynamicTyping:false, skipEmptyLines:true});
+  return parsed.data || [];
+}
+
+async function loadAll(){
+  const [ksiRows, prodRows, geoRes] = await Promise.all([
+    loadCsv(KSI_URL),
+    loadCsv(PROD_URL),
+    fetch(GEO_URL, {cache:'no-store'})
+  ]);
+  if (!geoRes.ok) throw new Error('GeoJSON fetch failed');
+  geoJson = await geoRes.json();
+
+  ingestWideCsv(ksiRows, 'ksi');
+  ingestWideCsv(prodRows, 'prod');
+}
+
+function ingestWideCsv(csvRows, key){
+  for (const r of csvRows) {
+    const code = norm(r.AREA_CODE);
+    if (!code) continue;
+    const name = String(r.AREA_NAME ?? '').trim();
+    if (!records.has(code)) records.set(code, { code, name, years: {} });
+    const rec = records.get(code);
+    if (!rec.name && name) rec.name = name;
+    for (const col of Object.keys(r)) {
+      if (!/^\d{4}$/.test(col)) continue;
+      const y = +col;
+      if (!rec.years[y]) rec.years[y] = {};
+      rec.years[y][key] = num(r[col]);
+    }
+  }
+}
+
+// ================== DERIVED DATA ==================
+function computeDerived(){
+  const ksiVals = [], prodVals = [], ksiBivarVals = [], prodBivarVals = [];
+
+  for (let y=2015; y<=2024; y++) {
+    const arr = [];
+    for (const rec of records.values()) {
+      const yr = rec.years[y] || {};
+      arr.push({ code: rec.code, name: rec.name, year:y, ksi: yr.ksi, prod: yr.prod });
+      if (Number.isFinite(yr.ksi)) ksiVals.push(yr.ksi);
+      if (Number.isFinite(yr.prod)) prodVals.push(yr.prod);
+      if (y <= 2023 && Number.isFinite(yr.ksi) && Number.isFinite(yr.prod)) {
+        ksiBivarVals.push(yr.ksi);
+        prodBivarVals.push(yr.prod);
+      }
+    }
+    rowsByYear.set(y, arr);
+  }
+
+  breaks.ksi = quantiles(ksiVals, 8);
+  breaks.prod = quantiles(prodVals, 8);
+  breaks.ksiTerciles = quantiles(ksiBivarVals, 3);
+  breaks.prodTerciles = quantiles(prodBivarVals, 3);
+
+  stats.ksiMean = mean(ksiBivarVals); stats.ksiSd = sd(ksiBivarVals, stats.ksiMean) || 1;
+  stats.prodMean = mean(prodBivarVals); stats.prodSd = sd(prodBivarVals, stats.prodMean) || 1;
+
+  for (let y=2015; y<=2024; y++) {
+    const arr = rowsByYear.get(y);
+    addRanks(arr, 'ksi', 'ksiRank');   // rank 1 = most specialised/highest KSI
+    addRanks(arr, 'prod', 'prodRank'); // rank 1 = highest productivity
+    for (const r of arr) r.bivar = (y <= 2023) ? bivarClass(r.ksi, r.prod) : null;
+  }
+}
+function mean(v){ return v.length ? v.reduce((a,b)=>a+b,0) / v.length : 0; }
+function sd(v, m){ return v.length ? Math.sqrt(v.reduce((a,b)=>a+(b-m)**2,0) / v.length) : 0; }
+function addRanks(arr, key, outKey){
+  const sorted = arr.filter(r => Number.isFinite(r[key])).sort((a,b)=>b[key]-a[key]);
+  sorted.forEach((r,i)=>{ r[outKey] = i + 1; });
+}
+function rowFor(code, y=year){
+  return (rowsByYear.get(y) || []).find(r => r.code === code);
+}
+
+function nearestPeers(target, max=3){
+  if (!target || !Number.isFinite(target.ksi) || !Number.isFinite(target.prod) || year > 2023) return [];
+  const tk = (target.ksi - stats.ksiMean) / stats.ksiSd;
+  const tp = (target.prod - stats.prodMean) / stats.prodSd;
+  return (rowsByYear.get(year) || [])
+    .filter(r => r.code !== target.code && Number.isFinite(r.ksi) && Number.isFinite(r.prod))
+    .map(r => ({
+      ...r,
+      dist: Math.hypot(((r.ksi - stats.ksiMean) / stats.ksiSd) - tk, ((r.prod - stats.prodMean) / stats.prodSd) - tp)
+    }))
+    .sort((a,b)=>a.dist-b.dist)
+    .slice(0,max);
+}
+
+// ================== MAP ==================
+function baseStyle(){ return { color:'#9fb6e6', weight:1.1, fillColor:NO_DATA_FILL, fillOpacity:0.9 }; }
+
+function drawLayer(){
+  if (layer) map.removeLayer(layer);
+  layer = L.geoJSON(geoJson, {
+    style: baseStyle,
+    onEachFeature: (f,l) => {
+      l.on({
+        mouseover: e => e.target.setStyle({weight:2,color:'#fff',fillColor:e.target._currentFill || NO_DATA_FILL,fillOpacity:1}),
+        mouseout: e => e.target.setStyle({weight:1.1,color:'#9fb6e6',fillColor:e.target._currentFill || NO_DATA_FILL,fillOpacity:0.9}),
+        click: () => { selectedCode = norm(f.properties[GEO_CODE_PROP]); updateProfile(); }
+      });
+    }
+  }).addTo(map);
+}
+
+function valueForMode(r){
+  if (!r) return NaN;
+  if (mode === 'prod') return r.prod;
+  return r.ksi;
+}
+function rankForMode(r){
+  if (!r) return NaN;
+  if (mode === 'prod') return r.prodRank;
+  return r.ksiRank;
+}
+
+function render(){
+  setYearBoundsForMode();
+  document.getElementById('kpi-year').textContent = year;
+  document.getElementById('kpi-mode').textContent = modeLabel();
+
+  if (!layer) return;
+
+  layer.eachLayer(l => {
+    const f = l.feature;
+    const code = norm(f.properties[GEO_CODE_PROP]);
+    const name = String(f.properties[GEO_NAME_PROP] || '');
+    const r = rowFor(code);
+    let fill = NO_DATA_FILL;
+
+    if (mode === 'bivar') {
+      fill = r?.bivar?.color || NO_DATA_FILL;
+    } else if (mode === 'prod') {
+      fill = colorForSingle(r?.prod, breaks.prod);
+    } else {
+      fill = colorForSingle(r?.ksi, breaks.ksi);
+    }
+
+    l._currentFill = fill;
+    l.setStyle({fillColor: fill});
+    l.bindTooltip(tooltipHtml(name, code, r), {sticky:true, opacity:0.95, className:'tooltip'});
+  });
+
+  updateLegend();
+  updateProfile();
+  applyLegendVisibility();
+}
+
+function tooltipHtml(name, code, r){
+  if (!r) {
+    return `<div><strong>${safe(name)}</strong><br><span class="note">${safe(code)}</span><br>No data</div>`;
+  }
+  let html = `<div><strong>${safe(name)}</strong><br><span class="note">${safe(code)}</span><br>`;
+  if (mode === 'ksi') {
+    html += `KSI: <span class="strong">${fmt(r.ksi,3)}</span><br>Rank: <span class="strong">${fmtRank(r.ksiRank)}</span>`;
+  } else if (mode === 'prod') {
+    html += `Productivity index: <span class="strong">${fmt(r.prod,1)}</span><br>Rank: <span class="strong">${fmtRank(r.prodRank)}</span>`;
+  } else {
+    html += `KSI: <span class="strong">${fmt(r.ksi,3)}</span> · Rank <span class="strong">${fmtRank(r.ksiRank)}</span><br>`;
+    html += `Productivity: <span class="strong">${fmt(r.prod,1)}</span> · Rank <span class="strong">${fmtRank(r.prodRank)}</span><br>`;
+    html += `Class: <span class="strong">${safe(bivarLabel(r.bivar))}</span>`;
+    const peers = nearestPeers(r,3);
+    if (peers.length) html += `<br><span class="note">Similar LADs:</span> ${peers.map(p=>safe(p.name)).join(', ')}`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function updateProfile(){
+  const el = document.getElementById('profilePanel');
+  if (!selectedCode) {
+    el.innerHTML = `<h2>Select a local authority</h2><div class="note">Click an area on the map to show its values, ranks and nearest peers.</div>`;
+    return;
+  }
+  const r = rowFor(selectedCode);
+  if (!r) {
+    el.innerHTML = `<h2>No data</h2><div class="note">${safe(selectedCode)}</div>`;
+    return;
+  }
+  const base2015 = rowFor(selectedCode, 2015);
+  const dKsi = Number.isFinite(r.ksi) && Number.isFinite(base2015?.ksi) ? r.ksi - base2015.ksi : NaN;
+  const dProd = Number.isFinite(r.prod) && Number.isFinite(base2015?.prod) ? r.prod - base2015.prod : NaN;
+
+  let html = `<h2>${safe(r.name)} <span class="code">${safe(r.code)}</span></h2>`;
+  html += `<div class="profile-row"><span>KSI</span><span>${fmt(r.ksi,3)} · rank ${fmtRank(r.ksiRank)}</span></div>`;
+  html += `<div class="profile-row"><span>Productivity</span><span>${fmt(r.prod,1)} · rank ${fmtRank(r.prodRank)}</span></div>`;
+  html += `<div class="profile-row"><span>Change in KSI since 2015</span><span>${Number.isFinite(dKsi) ? (dKsi>=0?'+':'') + dKsi.toFixed(3) : '—'}</span></div>`;
+  html += `<div class="profile-row"><span>Change in productivity since 2015</span><span>${Number.isFinite(dProd) ? (dProd>=0?'+':'') + dProd.toFixed(1) : '—'}</span></div>`;
+  if (mode === 'bivar' && r.bivar) {
+    html += `<div class="profile-row"><span>Classification</span><span>${safe(bivarLabel(r.bivar))}</span></div>`;
+    const peers = nearestPeers(r,3);
+    if (peers.length) {
+      html += `<div style="border-top:1px solid rgba(255,255,255,.08); padding-top:8px; margin-top:4px; color:var(--muted);">Most similar LADs</div>`;
+      html += peers.map(p => `<div class="peer">${safe(p.name)}<br><small>KSI ${fmt(p.ksi,3)} · productivity ${fmt(p.prod,1)}</small></div>`).join('');
+    }
+  }
+  el.innerHTML = html;
+}
+
+// ================== LEGENDS ==================
+function updateLegend(){
+  const el = document.getElementById('legend');
+  if (mode === 'bivar') return updateBivarLegend(el);
+
+  const brks = mode === 'prod' ? breaks.prod : breaks.ksi;
+  const title = mode === 'prod' ? 'GVA/FTE productivity index' : 'Krugman Specialisation Index';
+  const sub = mode === 'prod' ? 'GB = 100 · fixed scale, 2015–2023' : 'KSI divided by two · fixed scale, 2015–2024';
+  const dp = mode === 'prod' ? 1 : 3;
+  let html = `<div class="legend-title">${title}<br><span class="legend-sub">${sub}</span></div>`;
+  for (let i=0; i<SINGLE_PALETTE.length; i++) {
+    const a = brks[i], b = brks[i+1];
+    html += `<div class="row"><span class="swatch" style="background:${SINGLE_PALETTE[i]}"></span>${fmt(a,dp)} – ${fmt(b,dp)}</div>`;
+  }
+  html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span>No data</div>`;
+  el.innerHTML = html;
+}
+function updateBivarLegend(el){
+  let html = `<div class="legend-title">KSI × productivity<br><span class="legend-sub">Fixed 3×3 classification, 2015–2023</span></div>`;
+  html += `<div class="bivar-wrap">`;
+  html += `<div></div><div class="bivar-lab">Low prod.</div><div class="bivar-lab">Mid</div><div class="bivar-lab">High prod.</div>`;
+  for (let kr=0; kr<3; kr++) {
+    html += `<div class="bivar-y">${['More diversified','Moderate','More specialised'][kr]}</div>`;
+    for (let pr=0; pr<3; pr++) html += `<div class="bivar-cell" style="background:${BIVAR[kr][pr]}"></div>`;
+  }
+  html += `</div>`;
+  html += `<div class="row" style="margin-top:8px;"><span class="swatch" style="background:${NO_DATA_FILL}"></span>No data / 2024 unavailable</div>`;
+  el.innerHTML = html;
+}
+function applyLegendVisibility(){
+  const legend = document.getElementById('legend');
+  const btn = document.getElementById('legendToggle');
+  legend.style.display = legendVisible ? 'block' : 'none';
+  btn.textContent = legendVisible ? 'Hide legend' : 'Show legend';
+  localStorage.setItem('legendVisible', JSON.stringify(legendVisible));
+}
+
+function fitUK(){ if(layer) map.fitBounds(layer.getBounds().pad(-0.05), {padding:[20,20]}); }
+function togglePlay(){
+  const btn = document.getElementById('playBtn');
+  if (timer) { clearInterval(timer); timer = null; btn.textContent = '▶ Play year'; return; }
+  btn.textContent = '⏸ Pause';
+  timer = setInterval(() => {
+    const maxY = (mode === 'ksi') ? 2024 : 2023;
+    year = year >= maxY ? 2015 : year + 1;
+    render();
+  }, 1200);
+}
+</script>
+</body>
+</html>
