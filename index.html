@@ -127,7 +127,7 @@
     .legend-title { margin-bottom:6px; font-weight:750; text-transform:uppercase; line-height:1.3; }
     .legend-sub { font-weight:400; color:var(--muted); text-transform:none; }
 
-    .bivar-wrap { display:grid; grid-template-columns: 72px repeat(3, 44px); gap:4px; align-items:center; }
+    .bivar-wrap { display:grid; grid-template-columns: 72px repeat(5, 34px); gap:4px; align-items:center; }
     .bivar-cell { height:28px; border-radius:4px; border:1px solid rgba(255,255,255,.16); }
     .bivar-lab { color:var(--muted); font-size:11px; text-align:center; }
     .bivar-y { color:var(--muted); font-size:11px; text-align:right; padding-right:4px; }
@@ -200,12 +200,7 @@
         <h2>Select a local authority</h2>
         <div class="note">Click an area on the map to show its values, ranks and nearest peers.</div>
       </div>
-
-      <div class="group method">
-        <strong style="color:var(--text);">Method note</strong><br>
-        KSI is shown divided by two; higher values indicate greater industrial specialisation relative to GB. Productivity is indexed to GB = 100. Single-variable maps use fixed breaks across all available years. The cross-referenced view uses fixed 3×3 groups for KSI and productivity and is available to 2023.
-      </div>
-    </aside>
+</aside>
 
     <main>
       <div id="map"></div>
@@ -225,22 +220,26 @@ const GEO_CODE_PROP = 'LAD23CD';
 const GEO_NAME_PROP = 'LAD23NM';
 
 // ================== PALETTES ==================
-const SINGLE_PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
+// Single-variable maps use distinct palettes: KSI = blue, productivity = yellow/amber.
+const KSI_PALETTE = ['#eef4fb','#d8e6f4','#bfd7ee','#96bfe0','#6ea5d1','#4b88bf','#2f6f9f','#1f4f73'];
+const PROD_PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
 const NO_DATA_FILL = '#3a4258';
 
-// 3x3 bivariate palette: rows = KSI low/mid/high, columns = productivity low/mid/high.
-// Cool analytical palette, deliberately distinct from the amber single-variable maps.
+// 5x5 bivariate palette: rows = KSI very low -> very high; columns = productivity very low -> very high.
+// Blue = KSI, yellow = productivity, green = the intersection.
 const BIVAR = [
-  ['#d9e5ef', '#9ec8cf', '#5fb7bd'],
-  ['#9bacc7', '#6f8eae', '#337f9e'],
-  ['#6d6f9f', '#4b5f91', '#163b75']
+  ['#eef2f3','#e8ecd0','#f3e7a3','#ead66d','#e4c84a'],
+  ['#c7d9e6','#c9dfc9','#d8d78f','#cec66b','#c6b64a'],
+  ['#9bb9cf','#9dcea6','#8fc79a','#8fb36e','#789e45'],
+  ['#5f95b8','#62b49f','#58aa95','#5a9754','#518f44'],
+  ['#2f6f9f','#2f9c89','#2f8f5b','#2f884c','#2f7f40']
 ];
 
 // ================== STATE ==================
 let map, layer, geoJson;
 let records = new Map();       // code -> {name, years: {2015:{ksi,prod}}}
 let rowsByYear = new Map();    // year -> array of {code,name,ksi,prod,ksiRank,prodRank,bivarClass...}
-let breaks = { ksi: [], prod: [], ksiTerciles: [], prodTerciles: [] };
+let breaks = { ksi: [], prod: [], ksiBivar: [], prodBivar: [] };
 let stats = { ksiMean: 0, ksiSd: 1, prodMean: 0, prodSd: 1 };
 let year = 2023;
 let mode = 'ksi';
@@ -290,20 +289,20 @@ function classify(val, brks){
   }
   return brks.length-2;
 }
-function colorForSingle(val, brks){
+function colorForSingle(val, brks, palette){
   const c = classify(val, brks);
-  return c < 0 ? NO_DATA_FILL : SINGLE_PALETTE[Math.min(c, SINGLE_PALETTE.length-1)];
+  return c < 0 ? NO_DATA_FILL : palette[Math.min(c, palette.length-1)];
 }
 function bivarClass(ksi, prod){
-  const kr = classify(ksi, breaks.ksiTerciles);
-  const pr = classify(prod, breaks.prodTerciles);
+  const kr = classify(ksi, breaks.ksiBivar);
+  const pr = classify(prod, breaks.prodBivar);
   if (kr < 0 || pr < 0) return null;
   return { ksiGroup: kr, prodGroup: pr, color: BIVAR[kr][pr] };
 }
 function bivarLabel(cls){
   if (!cls) return 'No data';
-  const k = ['More diversified','Moderately specialised','More specialised'][cls.ksiGroup];
-  const p = ['lower productivity','mid productivity','higher productivity'][cls.prodGroup];
+  const k = ['More diversified','More diversified','Moderately specialised','More specialised','More specialised'][cls.ksiGroup];
+  const p = ['lower productivity','lower productivity','mid productivity','higher productivity','higher productivity'][cls.prodGroup];
   return `${k} / ${p}`;
 }
 
@@ -421,8 +420,8 @@ function computeDerived(){
 
   breaks.ksi = quantiles(ksiVals, 8);
   breaks.prod = quantiles(prodVals, 8);
-  breaks.ksiTerciles = quantiles(ksiBivarVals, 3);
-  breaks.prodTerciles = quantiles(prodBivarVals, 3);
+  breaks.ksiBivar = quantiles(ksiBivarVals, 5);
+  breaks.prodBivar = quantiles(prodBivarVals, 5);
 
   stats.ksiMean = mean(ksiBivarVals); stats.ksiSd = sd(ksiBivarVals, stats.ksiMean) || 1;
   stats.prodMean = mean(prodBivarVals); stats.prodSd = sd(prodBivarVals, stats.prodMean) || 1;
@@ -503,9 +502,9 @@ function render(){
     if (mode === 'bivar') {
       fill = r?.bivar?.color || NO_DATA_FILL;
     } else if (mode === 'prod') {
-      fill = colorForSingle(r?.prod, breaks.prod);
+      fill = colorForSingle(r?.prod, breaks.prod, PROD_PALETTE);
     } else {
-      fill = colorForSingle(r?.ksi, breaks.ksi);
+      fill = colorForSingle(r?.ksi, breaks.ksi, KSI_PALETTE);
     }
 
     l._currentFill = fill;
@@ -575,24 +574,25 @@ function updateLegend(){
   if (mode === 'bivar') return updateBivarLegend(el);
 
   const brks = mode === 'prod' ? breaks.prod : breaks.ksi;
+  const palette = mode === 'prod' ? PROD_PALETTE : KSI_PALETTE;
   const title = mode === 'prod' ? 'GVA/FTE productivity index' : 'Krugman Specialisation Index';
   const sub = mode === 'prod' ? 'GB = 100 · fixed scale, 2015–2023' : 'KSI divided by two · fixed scale, 2015–2024';
   const dp = mode === 'prod' ? 1 : 3;
   let html = `<div class="legend-title">${title}<br><span class="legend-sub">${sub}</span></div>`;
-  for (let i=0; i<SINGLE_PALETTE.length; i++) {
+  for (let i=0; i<palette.length; i++) {
     const a = brks[i], b = brks[i+1];
-    html += `<div class="row"><span class="swatch" style="background:${SINGLE_PALETTE[i]}"></span>${fmt(a,dp)} – ${fmt(b,dp)}</div>`;
+    html += `<div class="row"><span class="swatch" style="background:${palette[i]}"></span>${fmt(a,dp)} – ${fmt(b,dp)}</div>`;
   }
   html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span>No data</div>`;
   el.innerHTML = html;
 }
 function updateBivarLegend(el){
-  let html = `<div class="legend-title">KSI × productivity<br><span class="legend-sub">Fixed 3×3 classification, 2015–2023</span></div>`;
+  let html = `<div class="legend-title">KSI × productivity<br><span class="legend-sub">Fixed 5×5 classification, 2015–2023</span></div>`;
   html += `<div class="bivar-wrap">`;
-  html += `<div></div><div class="bivar-lab">Low prod.</div><div class="bivar-lab">Mid</div><div class="bivar-lab">High prod.</div>`;
-  for (let kr=0; kr<3; kr++) {
-    html += `<div class="bivar-y">${['More diversified','Moderate','More specialised'][kr]}</div>`;
-    for (let pr=0; pr<3; pr++) html += `<div class="bivar-cell" style="background:${BIVAR[kr][pr]}"></div>`;
+  html += `<div></div><div class="bivar-lab">Low prod.</div><div class="bivar-lab"></div><div class="bivar-lab">Mid</div><div class="bivar-lab"></div><div class="bivar-lab">High prod.</div>`;
+  for (let kr=0; kr<5; kr++) {
+    html += `<div class="bivar-y">${['More diversified','','Moderate','','More specialised'][kr]}</div>`;
+    for (let pr=0; pr<5; pr++) html += `<div class="bivar-cell" style="background:${BIVAR[kr][pr]}"></div>`;
   }
   html += `</div>`;
   html += `<div class="row" style="margin-top:8px;"><span class="swatch" style="background:${NO_DATA_FILL}"></span>No data / 2024 unavailable</div>`;
